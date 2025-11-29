@@ -1,0 +1,75 @@
+name: immich
+services:
+  immich-server:
+    container_name: immich_server
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
+    volumes:
+      - ${UPLOAD_LOCATION}:/data
+      - /etc/localtime:/etc/localtime:ro
+    # uncomment this line to enable hardware transcoding on Intel/AMD iGPUs and some ARM devices
+    #devices:
+    #  - /dev/dri:/dev/dri 
+    env_file:
+      - stack.env
+    ports:
+      - '2283:2283'
+    depends_on:
+      - redis
+      - database
+    networks:
+      - internal
+      - external
+    restart: always
+    healthcheck:
+      disable: false
+
+  immich-machine-learning:
+    container_name: immich_machine_learning
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
+    volumes:
+      - model-cache:/cache
+    env_file:
+      - stack.env
+    restart: unless-stopped
+    networks:
+      - internal
+      - external
+    healthcheck:
+      disable: false
+
+  redis:
+    container_name: immich_redis
+    image: docker.io/valkey/valkey:8-bookworm@sha256:fea8b3e67b15729d4bb70589eb03367bab9ad1ee89c876f54327fc7c6e618571
+    healthcheck:
+      test: redis-cli ping || exit 1
+    networks:
+      - internal
+    restart: always
+
+  database:
+    container_name: immich_postgres
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:32324a2f41df5de9efe1af166b7008c3f55646f8d0e00d9550c16c9822366b4a
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+      # Uncomment the DB_STORAGE_TYPE: 'HDD' var if your database isn't stored on SSDs
+      # DB_STORAGE_TYPE: 'HDD'
+    volumes:
+      - ${IMMICH_DB_DATA_PATH}:/var/lib/postgresql/data # PostgreSQL persistent storage
+    networks:
+      - internal
+    shm_size: 128mb
+    restart: unless-stopped
+
+volumes:
+  model-cache:
+
+networks:
+  internal:
+    name: immich-stack-internal
+    internal: true
+  external:
+    name: immich-stack-external
+    driver: bridge
